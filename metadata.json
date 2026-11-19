@@ -1,0 +1,6 @@
+{
+  "name": "My Dream Bank",
+  "description": "Enterprise-grade digital banking portal with account overview, seamless fund transfers, mobile check deposit, card controls, and spending analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
