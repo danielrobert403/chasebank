@@ -51,7 +51,7 @@ export default function App() {
 
   const [activeTab, setActiveTab] = useState<string>('accounts');
   const [sidebarMobileOpen, setSidebarMobileOpen] = useState<boolean>(false);
-  const [brandTheme, setBrandTheme] = useState<'chase' | 'dream'>('chase');
+  const brandTheme = 'chase' as const;
 
   // Authoritative State (Synchronized across all devices)
   const [accounts, setAccounts] = useState<BankAccount[]>(INITIAL_ACCOUNTS);
@@ -323,7 +323,6 @@ export default function App() {
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         brandTheme={brandTheme}
-        setBrandTheme={setBrandTheme}
         onOpenAdminLogin={() => setLoggedInRole('admin')}
         onLogout={handleLogout}
       />

@@ -87,12 +87,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
             })}
           </nav>
         </div>
-
-        {/* Quiet Security Marker */}
-        <div className="p-3 text-[11px] text-blue-200/70 border-t border-[#092F56]/60">
-          <span className="font-medium text-white/90">256-bit Encrypted</span>
-          <p className="text-[10px] text-blue-300/60 mt-0.5">Session Secured</p>
-        </div>
       </aside>
     </>
   );

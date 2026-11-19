@@ -17,7 +17,7 @@ interface TopNavProps {
   activeTab: string;
   setActiveTab: (tab: string) => void;
   brandTheme: 'dream' | 'chase';
-  setBrandTheme: (theme: 'dream' | 'chase') => void;
+  setBrandTheme?: (theme: 'dream' | 'chase') => void;
   onOpenAdminLogin?: () => void;
   onLogout: () => void;
 }
@@ -35,7 +35,6 @@ export const TopNav: React.FC<TopNavProps> = ({
   onToggleSidebar,
   setActiveTab,
   brandTheme,
-  setBrandTheme,
   onOpenAdminLogin,
   onLogout,
 }) => {
@@ -197,16 +196,6 @@ export const TopNav: React.FC<TopNavProps> = ({
 
         {/* Right side icons & Profile */}
         <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-          
-          {/* Brand Switcher Pill */}
-          <button
-            onClick={() => setBrandTheme(brandTheme === 'dream' ? 'chase' : 'dream')}
-            className="text-[11px] font-medium text-blue-200 hover:text-white bg-white/10 hover:bg-white/15 px-2.5 py-1 rounded-full transition-colors flex items-center gap-1 cursor-pointer"
-            title="Switch display branding between Chase and My Dream Bank"
-          >
-            <span>Theme:</span>
-            <span className="font-bold text-white uppercase">{brandTheme === 'chase' ? 'Chase' : 'My Dream Bank'}</span>
-          </button>
 
           {/* Notifications Bell with unread dot */}
           <div ref={alertsRef} className="relative">
