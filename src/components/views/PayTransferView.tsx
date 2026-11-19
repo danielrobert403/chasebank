@@ -107,7 +107,7 @@ export const PayTransferView: React.FC<PayTransferViewProps> = ({
             <div className="flex items-center gap-2">
               <ShieldCheck className="w-4 h-4 text-slate-400 shrink-0" />
               <span>
-                Daily transfer limit: ${adminSettings.dailyTransferLimit.toLocaleString('en-US', { minimumFractionDigits: 2 })} · Supervisor clearance above ${adminSettings.approvalThreshold.toLocaleString('en-US', { minimumFractionDigits: 2 })}.
+                Transfers are recorded immediately in your transaction history as Pending until final settlement.
               </span>
             </div>
             <div className="mt-2 pt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">

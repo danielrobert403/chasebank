@@ -93,11 +93,24 @@ export const RecentTransactions: React.FC<RecentTransactionsProps> = ({
               <div className="col-span-3 sm:col-span-3 text-right">
                 <span
                   className={`text-[13px] sm:text-sm font-bold tabular-nums tracking-tight font-sans ${
-                    isDeposit ? 'text-[#0E8345]' : 'text-slate-900'
+                    tx.status === 'Declined'
+                      ? 'text-slate-400 line-through'
+                      : isDeposit
+                        ? 'text-[#0E8345]'
+                        : 'text-slate-900'
                   }`}
                 >
                   {isDeposit ? '+' : '-'}${Math.abs(tx.amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
+                {tx.status !== 'Posted' && (
+                  <span
+                    className={`block text-[10px] font-semibold mt-0.5 ${
+                      tx.status === 'Pending' ? 'text-amber-600' : 'text-rose-600'
+                    }`}
+                  >
+                    {tx.status}
+                  </span>
+                )}
               </div>
             </div>
           );

@@ -36,7 +36,7 @@ export interface Transaction {
   subtext: string;
   category: 'Groceries' | 'Restaurants' | 'Shopping' | 'Auto & transport' | 'Bills & Utilities' | 'Income' | 'Entertainment' | 'Other';
   amount: number; // positive = credit/deposit, negative = debit/spend
-  status: 'Posted' | 'Pending';
+  status: 'Posted' | 'Pending' | 'Declined';
   merchantLogoKey: 'starbucks' | 'amazon' | 'deposit' | 'shell' | 'netflix' | 'target' | 'apple' | 'uber' | 'grocery' | 'transfer' | 'spotify' | 'lava' | 'republic' | 'generic';
   memo?: string;
   referenceNumber: string;

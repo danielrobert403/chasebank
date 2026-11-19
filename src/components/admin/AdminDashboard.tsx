@@ -338,10 +338,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               Hold
                             </button>
                             <button
-                              onClick={() => onRejectTransfer(item.id, 'Flagged by Treasury Risk Policy')}
+                              onClick={() => onRejectTransfer(item.id, 'Declined by Administrator')}
                               className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-semibold text-xs rounded-lg transition-colors cursor-pointer"
                             >
-                              Reject
+                              Decline
                             </button>
                           </div>
                         ) : (

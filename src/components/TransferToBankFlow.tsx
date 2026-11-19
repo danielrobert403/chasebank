@@ -180,20 +180,12 @@ export const TransferToBankFlow: React.FC<TransferToBankFlowProps> = ({
         setError('Please select a source account.');
         return;
       }
-      if (adminSettings?.transfersFrozen && currentFromAcc.type === 'checking') {
-        setError('Outbound transfers from this checking account are currently restricted by bank administration.');
-        return;
-      }
       if (isNaN(parsedAmount) || parsedAmount <= 0) {
         setError('Please enter a valid transfer amount greater than $0.00.');
         return;
       }
       if (parsedAmount > availableBalance) {
         setError(`Transfer amount exceeds available balance ($${availableBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })}).`);
-        return;
-      }
-      if (adminSettings && parsedAmount > adminSettings.dailyTransferLimit) {
-        setError(`Transfer exceeds daily cap of $${adminSettings.dailyTransferLimit.toLocaleString('en-US', { minimumFractionDigits: 2 })}.`);
         return;
       }
       setStep(3);
@@ -334,35 +326,6 @@ export const TransferToBankFlow: React.FC<TransferToBankFlowProps> = ({
       {showHistory ? (
         <div className="space-y-4">
           <div className="bg-white rounded-[24px] p-5 shadow-xs border border-slate-200/60 space-y-4">
-            {pendingTransfers.filter((p) => p.status === 'Pending Review' || p.status === 'Fraud Hold').length > 0 && (
-              <div>
-                <p className="text-[11px] font-bold uppercase tracking-wider text-amber-600 mb-2">
-                  Pending Review
-                </p>
-                <div className="space-y-2">
-                  {pendingTransfers
-                    .filter((p) => p.status === 'Pending Review' || p.status === 'Fraud Hold')
-                    .map((item) => (
-                      <div
-                        key={item.id}
-                        className="p-3 rounded-xl bg-amber-50/70 border border-amber-200/80 flex items-center justify-between gap-2"
-                      >
-                        <div className="min-w-0">
-                          <p className="text-xs font-bold text-slate-900 truncate">{item.toRecipient}</p>
-                          <p className="text-[11px] text-slate-500">{item.timestamp}</p>
-                        </div>
-                        <div className="text-right shrink-0">
-                          <p className="text-xs font-bold font-mono text-slate-900">
-                            -${item.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                          </p>
-                          <span className="text-[10px] font-semibold text-amber-700">{item.status}</span>
-                        </div>
-                      </div>
-                    ))}
-                </div>
-              </div>
-            )}
-
             <div>
               <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2">
                 Recent Bank Transfers
@@ -371,7 +334,7 @@ export const TransferToBankFlow: React.FC<TransferToBankFlowProps> = ({
                 <p className="text-xs text-slate-500 py-6 text-center">No recent bank transfers recorded yet.</p>
               ) : (
                 <div className="divide-y divide-slate-100">
-                  {bankTransferHistory.slice(0, 6).map((tx) => (
+                  {bankTransferHistory.slice(0, 8).map((tx) => (
                     <div key={tx.id} className="py-3 flex items-center justify-between gap-2">
                       <div className="min-w-0">
                         <p className="text-xs font-bold text-slate-900 truncate">{tx.description}</p>
@@ -382,7 +345,17 @@ export const TransferToBankFlow: React.FC<TransferToBankFlowProps> = ({
                         <p className="text-xs font-bold font-mono text-slate-900">
                           -${Math.abs(tx.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                         </p>
-                        <span className="text-[10px] text-emerald-700 font-semibold">{tx.status}</span>
+                        <span
+                          className={`text-[10px] font-semibold ${
+                            tx.status === 'Pending'
+                              ? 'text-amber-600'
+                              : tx.status === 'Declined'
+                                ? 'text-rose-600'
+                                : 'text-emerald-700'
+                          }`}
+                        >
+                          {tx.status}
+                        </span>
                       </div>
                     </div>
                   ))}
@@ -475,27 +448,13 @@ export const TransferToBankFlow: React.FC<TransferToBankFlowProps> = ({
         /* VIEW C: TRANSFER CONFIRMATION RECEIPT */
         <div className="space-y-4">
           <div className="bg-white rounded-[24px] p-6 shadow-xs border border-slate-200/60 text-center">
-            <div
-              className={`w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4 ${
-                submittedDetails.requiresApproval
-                  ? 'bg-amber-100 text-amber-600'
-                  : 'bg-emerald-100 text-emerald-700'
-              }`}
-            >
-              {submittedDetails.requiresApproval ? (
-                <Clock className="w-7 h-7" />
-              ) : (
-                <CheckCircle2 className="w-7 h-7" />
-              )}
+            <div className="w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4 bg-amber-100 text-amber-600">
+              <Clock className="w-7 h-7" />
             </div>
 
-            <h3 className="text-lg font-bold text-slate-900">
-              {submittedDetails.requiresApproval ? 'Submitted for Approval' : 'Transfer Initiated'}
-            </h3>
+            <h3 className="text-lg font-bold text-slate-900">Transfer Initiated</h3>
             <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-              {submittedDetails.requiresApproval
-                ? `Your ${submittedDetails.speed} transfer exceeds the verification threshold and is queued for supervisor clearance.`
-                : `Your ${submittedDetails.speed} transfer to ${submittedDetails.recipientName} has been dispatched.`}
+              Your {submittedDetails.speed} transfer to {submittedDetails.recipientName} has been submitted and is currently pending.
             </p>
 
             <div className="mt-5 p-4 rounded-2xl bg-[#F6F8FB] border border-slate-200/70 text-left space-y-2.5 text-xs">
@@ -527,9 +486,7 @@ export const TransferToBankFlow: React.FC<TransferToBankFlowProps> = ({
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Status</span>
-                <span className={`font-semibold ${submittedDetails.requiresApproval ? 'text-amber-600' : 'text-emerald-700'}`}>
-                  {submittedDetails.requiresApproval ? 'Pending Administrative Clearance' : 'Posted'}
-                </span>
+                <span className="font-semibold text-amber-600">Pending</span>
               </div>
             </div>
           </div>
@@ -823,14 +780,6 @@ export const TransferToBankFlow: React.FC<TransferToBankFlowProps> = ({
                   />
                 </div>
 
-                {adminSettings && parsedAmount > adminSettings.approvalThreshold && (
-                  <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-start gap-2">
-                    <Clock className="w-4 h-4 shrink-0 mt-0.5" />
-                    <span>
-                      Transfers above ${adminSettings.approvalThreshold.toLocaleString()} require Treasury Ops administrator clearance before final settlement.
-                    </span>
-                  </div>
-                )}
               </>
             )}
 

@@ -149,29 +149,24 @@ export default function App() {
 
   // Live Cross-Device Transfers
   const handleExecuteTransfer = (fromId: string, toId: string, amount: number, memo: string) => {
-    const fromAcc = accounts.find(a => a.id === fromId);
-    const requiresAdminApproval = (fromAcc?.type === 'checking') && (amount > adminSettings.approvalThreshold);
-
     fetch('/api/bank/transfer', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ fromId, toId, amount, memo }),
     })
       .then(res => res.json())
-      .then(data => {
+      .then(() => {
         // Server broadcasts to all clients via SSE
       })
       .catch(err => {
         console.error('Transfer failed', err);
       });
 
-    return { requiresApproval: requiresAdminApproval };
+    return { requiresApproval: false };
   };
 
   // Live Cross-Device Inter-Bank & FedWire Transfers
   const handleExecuteInterBankTransfer = (payload: InterBankTransferPayload) => {
-    const requiresAdminApproval = payload.amount > adminSettings.approvalThreshold;
-
     fetch('/api/bank/inter-bank-transfer', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -183,7 +178,7 @@ export default function App() {
         console.error('Inter-bank transfer failed', err);
       });
 
-    return { requiresApproval: requiresAdminApproval };
+    return { requiresApproval: false };
   };
 
   // Live Cross-Device Mobile Check Deposit

@@ -90,7 +90,7 @@ app.get('/api/bank/state', (_req: Request, res: Response) => {
   });
 });
 
-// 3. Customer Fund Transfer
+// 3. Customer Fund Transfer (Internal)
 app.post('/api/bank/transfer', (req: Request, res: Response) => {
   const { fromId, toId, amount, memo } = req.body;
   const numAmount = parseFloat(amount);
@@ -106,65 +106,15 @@ app.post('/api/bank/transfer', (req: Request, res: Response) => {
     return res.status(404).json({ error: 'Account not found' });
   }
 
-  // Check admin freeze
-  if (adminSettings.transfersFrozen && fromAcc.type === 'checking') {
-    return res.status(403).json({ error: 'Outbound transfers from this account are restricted by bank administration.' });
+  const available = fromAcc.type === 'credit' ? (fromAcc.availableCredit || 0) : fromAcc.balance;
+  if (numAmount > available) {
+    return res.status(400).json({ error: `Transfer amount ($${numAmount.toFixed(2)}) exceeds available balance ($${available.toFixed(2)})` });
   }
 
-  // Check daily limit
-  if (numAmount > adminSettings.dailyTransferLimit) {
-    return res.status(400).json({ error: `Transfer exceeds daily limit of $${adminSettings.dailyTransferLimit.toFixed(2)}` });
-  }
+  const nowTs = Date.now();
+  const txId = `tx-${nowTs}`;
 
-  // Check supervisor threshold
-  if (fromAcc.type === 'checking' && numAmount > adminSettings.approvalThreshold) {
-    const pendingItem: PendingTransferItem = {
-      id: `ptx-${Date.now()}`,
-      txId: `tx-pending-${Date.now()}`,
-      fromAccountId: fromId,
-      fromAccountName: `${fromAcc.name} (···${fromAcc.lastFour})`,
-      toRecipient: toAcc.name || 'External Account',
-      amount: numAmount,
-      date: getRealtimeDateString(),
-      timestamp: getRealtimeTimeString(),
-      memo: memo || 'Online Transfer',
-      status: 'Pending Review',
-      riskScore: numAmount > 5000 ? 'High' : 'Medium',
-      flagReason: `Transfer ($${numAmount.toFixed(2)}) exceeds supervisor threshold ($${adminSettings.approvalThreshold.toFixed(2)})`,
-    };
-
-    pendingTransfers = [pendingItem, ...pendingTransfers];
-
-    auditLogs = [
-      {
-        id: `log-${Date.now()}`,
-        timestamp: getRealtimeTimeString(),
-        operator: 'SYSTEM_COMPLIANCE_GATE',
-        action: 'TRANSFER_ROUTED_TO_QUEUE',
-        details: `Transfer of $${numAmount.toFixed(2)} paused for administrator clearance.`,
-        severity: 'warning',
-      },
-      ...auditLogs,
-    ];
-
-    alerts = [
-      {
-        id: `alt-${Date.now()}`,
-        title: 'Transfer Pending Supervisor Release',
-        date: 'Today',
-        timestamp: getRealtimeTimeString(),
-        read: false,
-        type: 'statement',
-        description: `Your transfer of $${numAmount.toFixed(2)} to ${toAcc.name} is undergoing compliance review.`,
-      },
-      ...alerts,
-    ];
-
-    broadcastState();
-    return res.json({ requiresApproval: true, pendingItem });
-  }
-
-  // Execute immediate transfer
+  // Hold / deduct funds from source account immediately
   accounts = accounts.map(acc => {
     if (acc.id === fromId) {
       if (acc.type === 'credit') {
@@ -172,25 +122,20 @@ app.post('/api/bank/transfer', (req: Request, res: Response) => {
       }
       return { ...acc, balance: acc.balance - numAmount, availableBalance: (acc.availableBalance || 0) - numAmount };
     }
-    if (acc.id === toId) {
-      if (acc.type === 'credit') {
-        return { ...acc, balance: Math.max(0, acc.balance - numAmount), availableCredit: (acc.availableCredit || 0) + numAmount };
-      }
-      return { ...acc, balance: acc.balance + numAmount, availableBalance: (acc.availableBalance || 0) + numAmount };
-    }
     return acc;
   });
 
+  // Record immediately in Transaction History as Pending
   const newTx: Transaction = {
-    id: `tx-${Date.now()}`,
+    id: txId,
     accountId: fromId,
     date: getRealtimeDateString(),
     isoDate: new Date().toISOString(),
     description: `Transfer to ${toAcc.name}`,
-    subtext: `Online Transfer · ${memo || 'Completed'}`,
+    subtext: `Internal Transfer · ${memo || 'Processing'}`,
     category: 'Other',
     amount: -numAmount,
-    status: 'Posted',
+    status: 'Pending',
     merchantLogoKey: 'transfer',
     referenceNumber: `TRF-${Math.floor(100000 + Math.random() * 900000)}`,
     memo: memo || '',
@@ -198,8 +143,40 @@ app.post('/api/bank/transfer', (req: Request, res: Response) => {
 
   transactions = [newTx, ...transactions];
 
+  // Queue for Admin Approve / Decline
+  const pendingItem: PendingTransferItem = {
+    id: `ptx-${nowTs}`,
+    txId,
+    fromAccountId: fromId,
+    fromAccountName: `${fromAcc.name} (···${fromAcc.lastFour})`,
+    toRecipient: `${toAcc.name} (···${toAcc.lastFour})`,
+    toAccountId: toId,
+    fundsHeld: true,
+    amount: numAmount,
+    date: getRealtimeDateString(),
+    timestamp: getRealtimeTimeString(),
+    memo: memo || 'Internal Account Transfer',
+    status: 'Pending Review',
+    riskScore: numAmount > 10000 ? 'High' : numAmount > 1000 ? 'Medium' : 'Low',
+    flagReason: 'Awaiting standard transfer settlement',
+  };
+
+  pendingTransfers = [pendingItem, ...pendingTransfers];
+
+  auditLogs = [
+    {
+      id: `log-${nowTs}`,
+      timestamp: getRealtimeTimeString(),
+      operator: 'TRANSFER_GATEWAY',
+      action: 'TRANSFER_QUEUED_PENDING',
+      details: `Internal transfer of $${numAmount.toFixed(2)} to ${toAcc.name} recorded as Pending for admin decision.`,
+      severity: 'info',
+    },
+    ...auditLogs,
+  ];
+
   broadcastState();
-  res.json({ requiresApproval: false, transaction: newTx });
+  res.json({ requiresApproval: false, pending: true, transaction: newTx, pendingItem });
 });
 
 // 3.5. Inter-Bank & FedWire / FedNow / ACH Transfer
@@ -213,7 +190,6 @@ app.post('/api/bank/inter-bank-transfer', (req: Request, res: Response) => {
     transferSpeed,
     amount,
     memo,
-    securityPin,
   } = req.body;
 
   const numAmount = parseFloat(amount);
@@ -227,18 +203,9 @@ app.post('/api/bank/inter-bank-transfer', (req: Request, res: Response) => {
     return res.status(404).json({ error: 'Source account not found' });
   }
 
-  // Check admin freeze
-  if (adminSettings.transfersFrozen && fromAcc.type === 'checking') {
-    return res.status(403).json({ error: 'Outbound inter-bank transfers are currently restricted by bank administration.' });
-  }
-
   const available = fromAcc.type === 'credit' ? (fromAcc.availableCredit || 0) : fromAcc.balance;
   if (numAmount > available) {
     return res.status(400).json({ error: `Transfer amount ($${numAmount.toFixed(2)}) exceeds available balance ($${available.toFixed(2)})` });
-  }
-
-  if (numAmount > adminSettings.dailyTransferLimit) {
-    return res.status(400).json({ error: `Transfer exceeds daily cap of $${adminSettings.dailyTransferLimit.toFixed(2)}` });
   }
 
   const speedLabel = (transferSpeed as string) || 'FedWire';
@@ -246,56 +213,10 @@ app.post('/api/bank/inter-bank-transfer', (req: Request, res: Response) => {
   const cleanBeneficiary = (beneficiaryName as string)?.trim() || 'External Payee';
   const cleanAcct = (accountNumber as string)?.trim() || '••••';
   const lastFourAcct = cleanAcct.slice(-4);
+  const nowTs = Date.now();
+  const txId = `tx-${nowTs}`;
 
-  // Check supervisor threshold
-  if (numAmount > adminSettings.approvalThreshold) {
-    const pendingItem: PendingTransferItem = {
-      id: `ptx-${Date.now()}`,
-      txId: `tx-wire-${Date.now()}`,
-      fromAccountId: fromId,
-      fromAccountName: `${fromAcc.name} (···${fromAcc.lastFour})`,
-      toRecipient: `${cleanBeneficiary} · ${cleanBank} (···${lastFourAcct})`,
-      amount: numAmount,
-      date: getRealtimeDateString(),
-      timestamp: getRealtimeTimeString(),
-      memo: `${speedLabel} Wire: ${memo || 'Inter-Bank Transfer'} (ABA: ${routingNumber || 'N/A'})`,
-      status: 'Pending Review',
-      riskScore: numAmount > 10000 ? 'High' : 'Medium',
-      flagReason: `Inter-bank ${speedLabel} ($${numAmount.toFixed(2)}) to ${cleanBank} exceeds compliance threshold ($${adminSettings.approvalThreshold.toFixed(2)})`,
-    };
-
-    pendingTransfers = [pendingItem, ...pendingTransfers];
-
-    auditLogs = [
-      {
-        id: `log-${Date.now()}`,
-        timestamp: getRealtimeTimeString(),
-        operator: 'SYSTEM_COMPLIANCE_GATE',
-        action: 'INTERBANK_WIRE_HELD',
-        details: `${speedLabel} to ${cleanBeneficiary} at ${cleanBank} ($${numAmount.toFixed(2)}) held for administrative clearance.`,
-        severity: 'warning',
-      },
-      ...auditLogs,
-    ];
-
-    alerts = [
-      {
-        id: `alt-${Date.now()}`,
-        title: `${speedLabel} Wire Under Review`,
-        date: 'Today',
-        timestamp: getRealtimeTimeString(),
-        read: false,
-        type: 'statement',
-        description: `Your ${speedLabel} transfer of $${numAmount.toFixed(2)} to ${cleanBeneficiary} (${cleanBank}) is undergoing security review.`,
-      },
-      ...alerts,
-    ];
-
-    broadcastState();
-    return res.json({ requiresApproval: true, pendingItem });
-  }
-
-  // Deduct from sender balance
+  // Hold / deduct funds from source account immediately
   accounts = accounts.map(acc => {
     if (acc.id === fromId) {
       if (acc.type === 'credit') {
@@ -306,8 +227,9 @@ app.post('/api/bank/inter-bank-transfer', (req: Request, res: Response) => {
     return acc;
   });
 
+  // Immediately record in Transaction History as Pending
   const newTx: Transaction = {
-    id: `tx-${Date.now()}`,
+    id: txId,
     accountId: fromId,
     date: getRealtimeDateString(),
     isoDate: new Date().toISOString(),
@@ -315,28 +237,47 @@ app.post('/api/bank/inter-bank-transfer', (req: Request, res: Response) => {
     subtext: `${speedLabel} Transfer · Acct ····${lastFourAcct}`,
     category: 'Other',
     amount: -numAmount,
-    status: 'Posted',
+    status: 'Pending',
     merchantLogoKey: 'transfer',
     referenceNumber: `WIRE-${Math.floor(100000000 + Math.random() * 900000000)}`,
-    memo: memo || `${speedLabel} Wire Transfer`,
+    memo: memo || `${speedLabel} Transfer`,
   };
 
   transactions = [newTx, ...transactions];
 
+  // Queue in Admin Dashboard for Approve / Decline
+  const pendingItem: PendingTransferItem = {
+    id: `ptx-${nowTs}`,
+    txId,
+    fromAccountId: fromId,
+    fromAccountName: `${fromAcc.name} (···${fromAcc.lastFour})`,
+    toRecipient: `${cleanBeneficiary} · ${cleanBank} (···${lastFourAcct})`,
+    fundsHeld: true,
+    amount: numAmount,
+    date: getRealtimeDateString(),
+    timestamp: getRealtimeTimeString(),
+    memo: `${speedLabel}: ${memo || 'Inter-Bank Transfer'} (ABA: ${routingNumber || 'N/A'})`,
+    status: 'Pending Review',
+    riskScore: numAmount > 10000 ? 'High' : numAmount > 1000 ? 'Medium' : 'Low',
+    flagReason: `${speedLabel} outbound transfer awaiting settlement decision`,
+  };
+
+  pendingTransfers = [pendingItem, ...pendingTransfers];
+
   auditLogs = [
     {
-      id: `log-${Date.now()}`,
+      id: `log-${nowTs}`,
       timestamp: getRealtimeTimeString(),
-      operator: 'FEDWIRE_SETTLEMENT_GATEWAY',
-      action: 'INTERBANK_WIRE_CLEARED',
-      details: `Dispatched ${speedLabel} of $${numAmount.toFixed(2)} to ${cleanBeneficiary} at ${cleanBank} (ABA: ${routingNumber || 'N/A'}).`,
+      operator: 'TRANSFER_GATEWAY',
+      action: 'INTERBANK_TRANSFER_PENDING',
+      details: `${speedLabel} to ${cleanBeneficiary} at ${cleanBank} ($${numAmount.toFixed(2)}) queued as Pending for admin approval or decline.`,
       severity: 'info',
     },
     ...auditLogs,
   ];
 
   broadcastState();
-  res.json({ requiresApproval: false, transaction: newTx });
+  res.json({ requiresApproval: false, pending: true, transaction: newTx, pendingItem });
 });
 
 // 4. Mobile Check Deposit
@@ -458,13 +399,34 @@ app.post('/api/bank/admin-approve', (req: Request, res: Response) => {
     return res.status(404).json({ error: 'Transfer not found in queue' });
   }
 
-  // Deduct balance from source account
+  if (item.status === 'Approved' || item.status === 'Rejected') {
+    return res.json({ success: true });
+  }
+
+  // Update account balances (if funds were not already held on submit, deduct sender; if internal transfer, credit destination)
   accounts = accounts.map(acc => {
-    if (acc.id === item.fromAccountId) {
+    if (acc.id === item.fromAccountId && !item.fundsHeld) {
+      if (acc.type === 'credit') {
+        return { ...acc, balance: acc.balance + item.amount, availableCredit: (acc.availableCredit || 0) - item.amount };
+      }
       return {
         ...acc,
         balance: acc.balance - item.amount,
         availableBalance: (acc.availableBalance || 0) - item.amount,
+      };
+    }
+    if (item.toAccountId && acc.id === item.toAccountId) {
+      if (acc.type === 'credit') {
+        return {
+          ...acc,
+          balance: Math.max(0, acc.balance - item.amount),
+          availableCredit: (acc.availableCredit || 0) + item.amount,
+        };
+      }
+      return {
+        ...acc,
+        balance: acc.balance + item.amount,
+        availableBalance: (acc.availableBalance || 0) + item.amount,
       };
     }
     return acc;
@@ -474,22 +436,33 @@ app.post('/api/bank/admin-approve', (req: Request, res: Response) => {
     t.id === transferId ? { ...t, status: 'Approved' } : t
   );
 
-  const newTx: Transaction = {
-    id: `tx-rel-${Date.now()}`,
-    accountId: item.fromAccountId,
-    date: getRealtimeDateString(),
-    isoDate: new Date().toISOString(),
-    description: `Transfer to ${item.toRecipient}`,
-    subtext: `Released by Treasury Admin · ${item.memo}`,
-    category: 'Other',
-    amount: -item.amount,
-    status: 'Posted',
-    merchantLogoKey: 'transfer',
-    referenceNumber: `TRF-APP-${Math.floor(100000 + Math.random() * 900000)}`,
-    memo: item.memo,
-  };
+  const existingTx = transactions.find(tx => tx.id === item.txId);
+  let resultingTx: Transaction;
 
-  transactions = [newTx, ...transactions];
+  if (existingTx) {
+    resultingTx = {
+      ...existingTx,
+      status: 'Posted',
+      subtext: existingTx.subtext.replace(' · Processing', ' · Completed'),
+    };
+    transactions = transactions.map(tx => (tx.id === item.txId ? resultingTx : tx));
+  } else {
+    resultingTx = {
+      id: `tx-rel-${Date.now()}`,
+      accountId: item.fromAccountId,
+      date: getRealtimeDateString(),
+      isoDate: new Date().toISOString(),
+      description: `Transfer to ${item.toRecipient}`,
+      subtext: item.memo || 'Bank Transfer · Completed',
+      category: 'Other',
+      amount: -item.amount,
+      status: 'Posted',
+      merchantLogoKey: 'transfer',
+      referenceNumber: `TRF-${Math.floor(100000 + Math.random() * 900000)}`,
+      memo: item.memo,
+    };
+    transactions = [resultingTx, ...transactions];
+  }
 
   auditLogs = [
     {
@@ -497,7 +470,7 @@ app.post('/api/bank/admin-approve', (req: Request, res: Response) => {
       timestamp: getRealtimeTimeString(),
       operator: 'OP-8492 (Super Admin)',
       action: 'TRANSFER_APPROVED',
-      details: `Released transfer of $${item.amount.toFixed(2)} to ${item.toRecipient}.`,
+      details: `Approved & posted transfer of $${item.amount.toFixed(2)} to ${item.toRecipient}.`,
       severity: 'info',
     },
     ...auditLogs,
@@ -506,21 +479,21 @@ app.post('/api/bank/admin-approve', (req: Request, res: Response) => {
   alerts = [
     {
       id: `alt-${Date.now()}`,
-      title: 'Transfer Approved & Released',
+      title: 'Transfer Completed',
       date: 'Today',
       timestamp: getRealtimeTimeString(),
       read: false,
       type: 'deposit',
-      description: `Your transfer of $${item.amount.toFixed(2)} to ${item.toRecipient} was approved and has cleared.`,
+      description: `Your transfer of $${item.amount.toFixed(2)} to ${item.toRecipient} has posted.`,
     },
     ...alerts,
   ];
 
   broadcastState();
-  res.json({ success: true, transaction: newTx });
+  res.json({ success: true, transaction: resultingTx });
 });
 
-// 8. Admin: Reject Pending Transfer
+// 8. Admin: Decline Pending Transfer
 app.post('/api/bank/admin-reject', (req: Request, res: Response) => {
   const { transferId, reason } = req.body;
   const item = pendingTransfers.find(t => t.id === transferId);
@@ -529,8 +502,40 @@ app.post('/api/bank/admin-reject', (req: Request, res: Response) => {
     return res.status(404).json({ error: 'Transfer not found' });
   }
 
+  if (item.status === 'Approved' || item.status === 'Rejected') {
+    return res.json({ success: true });
+  }
+
+  // Refund held funds back to source account
+  if (item.fundsHeld) {
+    accounts = accounts.map(acc => {
+      if (acc.id === item.fromAccountId) {
+        if (acc.type === 'credit') {
+          return {
+            ...acc,
+            balance: Math.max(0, acc.balance - item.amount),
+            availableCredit: (acc.availableCredit || 0) + item.amount,
+          };
+        }
+        return {
+          ...acc,
+          balance: acc.balance + item.amount,
+          availableBalance: (acc.availableBalance || 0) + item.amount,
+        };
+      }
+      return acc;
+    });
+  }
+
   pendingTransfers = pendingTransfers.map(t =>
-    t.id === transferId ? { ...t, status: 'Rejected', flagReason: reason || 'Flagged by Treasury Risk Policy' } : t
+    t.id === transferId ? { ...t, status: 'Rejected', flagReason: reason || 'Declined' } : t
+  );
+
+  // Update matching Pending transaction in history to Declined
+  transactions = transactions.map(tx =>
+    tx.id === item.txId
+      ? { ...tx, status: 'Declined', subtext: `${tx.subtext} · Declined` }
+      : tx
   );
 
   auditLogs = [
@@ -539,7 +544,7 @@ app.post('/api/bank/admin-reject', (req: Request, res: Response) => {
       timestamp: getRealtimeTimeString(),
       operator: 'OP-8492 (Super Admin)',
       action: 'TRANSFER_REJECTED',
-      details: `Rejected transfer of $${item.amount.toFixed(2)} to ${item.toRecipient}. Reason: ${reason || 'Compliance flag'}.`,
+      details: `Declined transfer of $${item.amount.toFixed(2)} to ${item.toRecipient} and refunded balance. Reason: ${reason || 'Declined'}.`,
       severity: 'alert',
     },
     ...auditLogs,
@@ -548,12 +553,12 @@ app.post('/api/bank/admin-reject', (req: Request, res: Response) => {
   alerts = [
     {
       id: `alt-${Date.now()}`,
-      title: 'Transfer Blocked by Compliance',
+      title: 'Transfer Declined',
       date: 'Today',
       timestamp: getRealtimeTimeString(),
       read: false,
       type: 'security',
-      description: `Transfer of $${item.amount.toFixed(2)} to ${item.toRecipient} was declined by bank administration.`,
+      description: `Your transfer of $${item.amount.toFixed(2)} to ${item.toRecipient} was declined and the funds have been returned to your account.`,
     },
     ...alerts,
   ];

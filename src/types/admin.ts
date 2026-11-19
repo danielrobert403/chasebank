@@ -29,4 +29,6 @@ export interface PendingTransferItem {
   status: 'Pending Review' | 'Approved' | 'Rejected' | 'Fraud Hold';
   riskScore: 'Low' | 'Medium' | 'High';
   flagReason?: string;
+  toAccountId?: string;
+  fundsHeld?: boolean;
 }

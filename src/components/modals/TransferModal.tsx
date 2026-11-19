@@ -105,11 +105,6 @@ export const TransferModal: React.FC<TransferModalProps> = ({
       return;
     }
 
-    if (adminSettings?.transfersFrozen && currentFromAcc.type === 'checking') {
-      setError('Outbound transfers from this account are temporarily restricted by bank administration.');
-      return;
-    }
-
     if (amount > availableBalance) {
       setError(`Amount exceeds available balance ($${availableBalance.toLocaleString('en-US', { minimumFractionDigits: 2 })}).`);
       return;
@@ -201,26 +196,16 @@ export const TransferModal: React.FC<TransferModalProps> = ({
         ) : isInternalSuccess && internalSuccessData ? (
           <div className="p-6 text-center">
             <div className="bg-white rounded-[24px] p-6 border border-slate-200/70 shadow-xs">
-              <div
-                className={`w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4 ${
-                  internalSuccessData.requiresApproval ? 'bg-amber-100 text-amber-600' : 'bg-emerald-100 text-emerald-700'
-                }`}
-              >
-                {internalSuccessData.requiresApproval ? (
-                  <Clock className="w-7 h-7" />
-                ) : (
-                  <CheckCircle2 className="w-7 h-7" />
-                )}
+              <div className="w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4 bg-amber-100 text-amber-600">
+                <Clock className="w-7 h-7" />
               </div>
 
               <h4 className="text-lg font-bold text-slate-900 mb-1">
-                {internalSuccessData.requiresApproval ? 'Submitted for Approval' : 'Transfer Complete!'}
+                Transfer Initiated
               </h4>
 
               <p className="text-xs text-slate-600 mb-5 leading-relaxed">
-                {internalSuccessData.requiresApproval
-                  ? `Your internal transfer of $${internalSuccessData.amount.toFixed(2)} exceeds the approval threshold and is awaiting supervisor release.`
-                  : `Moved $${internalSuccessData.amount.toFixed(2)} from ${internalSuccessData.fromAccountName} to ${internalSuccessData.recipientName}.`}
+                Your transfer of ${internalSuccessData.amount.toFixed(2)} from {internalSuccessData.fromAccountName} to {internalSuccessData.recipientName} is currently pending.
               </p>
 
               <div className="p-3 bg-[#F6F8FB] rounded-xl border border-slate-200/70 text-xs text-slate-600 space-y-1.5 text-left">
@@ -230,9 +215,7 @@ export const TransferModal: React.FC<TransferModalProps> = ({
                 </div>
                 <div className="flex justify-between">
                   <span>Status</span>
-                  <span className={`font-semibold ${internalSuccessData.requiresApproval ? 'text-amber-600' : 'text-emerald-700'}`}>
-                    {internalSuccessData.requiresApproval ? 'Pending Clearance' : 'Posted'}
-                  </span>
+                  <span className="font-semibold text-amber-600">Pending</span>
                 </div>
               </div>
             </div>
@@ -293,11 +276,6 @@ export const TransferModal: React.FC<TransferModalProps> = ({
                   <label className="text-[13px] font-semibold text-slate-800">
                     Amount ($ USD)
                   </label>
-                  {adminSettings && (
-                    <span className="text-[11px] text-slate-400">
-                      &gt; ${adminSettings.approvalThreshold} requires approval
-                    </span>
-                  )}
                 </div>
                 <input
                   type="text"

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, CheckCircle2, AlertTriangle, Printer, Download, Tag, Edit3, ShieldCheck } from 'lucide-react';
+import { X, CheckCircle2, AlertTriangle, Printer, Tag, Edit3, Clock, XCircle } from 'lucide-react';
 import { Transaction, BankAccount } from '../../types/bank';
 import { MerchantIcon } from '../MerchantIcon';
 
@@ -67,8 +67,23 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
               </span>
             </div>
 
-            <div className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700">
-              <CheckCircle2 className="w-3.5 h-3.5" /> {transaction.status}
+            <div
+              className={`mt-2 inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${
+                transaction.status === 'Pending'
+                  ? 'bg-amber-50 text-amber-700'
+                  : transaction.status === 'Declined'
+                    ? 'bg-rose-50 text-rose-700'
+                    : 'bg-emerald-50 text-emerald-700'
+              }`}
+            >
+              {transaction.status === 'Pending' ? (
+                <Clock className="w-3.5 h-3.5" />
+              ) : transaction.status === 'Declined' ? (
+                <XCircle className="w-3.5 h-3.5" />
+              ) : (
+                <CheckCircle2 className="w-3.5 h-3.5" />
+              )}{' '}
+              {transaction.status}
             </div>
           </div>
 

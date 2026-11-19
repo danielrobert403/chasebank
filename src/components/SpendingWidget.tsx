@@ -12,7 +12,7 @@ export const SpendingWidget: React.FC<SpendingWidgetProps> = ({
   onViewAllSpending,
 }) => {
   const totalSpending = transactions
-    .filter((tx) => tx.amount < 0)
+    .filter((tx) => tx.amount < 0 && tx.status !== 'Declined')
     .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
 
   return (
